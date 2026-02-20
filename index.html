@@ -147,18 +147,17 @@ form.onsubmit = async e => {
   let res;
 
   if(id.value){
-    res = await supabase
-      .from("manutencoes")
-      .update(manutencao)
-      .eq("id", id.value)
-      .select()
-      .single();
+        res = await supabase
+    .from("manutencoes")
+    .insert(manutencao)
+    .select("id")
+    .single();
   }else{
-    res = await supabase
-      .from("manutencoes")
-      .insert(manutencao)
-      .select()
-      .single();
+        res = await supabase
+    .from("manutencoes")
+    .insert(manutencao)
+    .select("id")
+    .single();
   }
 
   if(res.error){
@@ -203,3 +202,4 @@ carregar();
 
 </body>
 </html>
+
