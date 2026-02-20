@@ -3,80 +3,213 @@
 <head>
 <meta charset="UTF-8">
 <title>Controle de Manutenção</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Supabase CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body{font-family:Arial;background:#f4f6f8;margin:0;padding:20px}
+h1{text-align:center}
+form,.card{background:#fff;padding:15px;border-radius:8px;margin-bottom:20px;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+input,textarea,select,button{width:100%;padding:8px;margin-top:8px}
+button{background:#2563eb;color:#fff;border:0;border-radius:5px;cursor:pointer}
+button:hover{opacity:.9}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px}
+.photos img{width:100%;border-radius:5px;margin-top:5px}
+.photos button{background:#dc2626;margin-top:5px}
+small{color:#666}
+</style>
 </head>
 
 <body>
 
-<h2>Nova Manutenção</h2>
+<h1>🛠 Controle de Manutenção</h1>
 
-<input type="text" id="titulo" placeholder="Título"><br><br>
-<textarea id="descricao" placeholder="Descrição"></textarea><br><br>
-<input type="file" id="foto"><br><br>
+<form id="form">
+  <input type="hidden" id="mid">
 
-<button onclick="salvar()">Salvar</button>
+  <input id="local" placeholder="Local da manutenção" required>
+  <textarea id="descricao" placeholder="Descrição" required></textarea>
+
+  <input type="date" id="dataManutencao" required>
+  <input id="responsavel" placeholder="Responsável" required>
+
+  <select id="status">
+    <option value="aberto">Aberto</option>
+    <option value="em andamento">Em andamento</option>
+    <option value="finalizado">Finalizado</option>
+  </select>
+
+  <input type="file" id="fotos" multiple accept="image/*">
+
+  <button>Salvar manutenção</button>
+</form>
+
+<div class="grid" id="lista"></div>
 
 <script>
-/* 🔑 CONFIG */
+/* ================= SUPABASE ================= */
 const SUPABASE_URL = "https://yydwtytjrjsbwycnfxlk.supabase.co";
 const SUPABASE_KEY = "SUA_ANON_KEY_AQUI";
 
-/* ✅ CRIA CLIENTE UMA ÚNICA VEZ */
 const supabaseClient = supabase.createClient(
   SUPABASE_URL,
   SUPABASE_KEY
 );
 
-async function salvar() {
-  const titulo = document.getElementById("titulo").value;
-  const descricao = document.getElementById("descricao").value;
-  const file = document.getElementById("foto").files[0];
+/* ================= COMPRESSÃO ================= */
+async function comprimirImagem(file){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = ()=>{
+      const canvas = document.createElement("canvas");
+      const max = 900;
+      let w = img.width, h = img.height;
 
-  if (!file) {
-    alert("Selecione uma imagem");
-    return;
-  }
+      if(w > h && w > max){ h *= max / w; w = max; }
+      else if(h > max){ w *= max / h; h = max; }
 
-  const fileName = Date.now() + "_" + file.name;
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img,0,0,w,h);
+      canvas.toBlob(b => resolve(b), "image/jpeg", 0.7);
+    }
+  });
+}
 
-  /* ⬆️ Upload */
-  const { error: uploadError } = await supabaseClient
-    .storage
-    .from("manutencoes")
-    .upload(fileName, file);
-
-  if (uploadError) {
-    console.error(uploadError);
-    alert("Erro no upload");
-    return;
-  }
-
-  /* 🔗 URL pública */
-  const { data: urlData } = supabaseClient
-    .storage
-    .from("manutencoes")
-    .getPublicUrl(fileName);
-
-  /* 💾 Inserção no banco */
+/* ================= CARREGAR ================= */
+async function carregar(){
   const { data, error } = await supabaseClient
     .from("manutencoes")
-    .insert([{
-      titulo,
-      descricao,
-      foto_url: urlData.publicUrl
-    }])
-    .select();
+    .select("*")
+    .order("created_at",{ascending:false});
 
-  if (error) {
+  if(error){
     console.error(error);
-    alert("Erro ao salvar no banco");
-  } else {
-    console.log("SALVO:", data);
-    alert("Salvo com sucesso!");
+    return;
   }
+
+  lista.innerHTML = "";
+
+  data.forEach(m=>{
+    lista.innerHTML += `
+      <div class="card">
+        <h3>${m.local}</h3>
+        <small>${m.data} • ${m.responsavel} • <b>${m.status}</b></small>
+        <p>${m.descricao}</p>
+        <div class="photos" id="p${m.id}"></div>
+        <button onclick="editar('${m.id}')">✏️ Editar</button>
+      </div>
+    `;
+    carregarFotos(m.id);
+  });
 }
+
+/* ================= FOTOS ================= */
+async function carregarFotos(id){
+  const { data } = await supabaseClient.storage
+    .from("fotos")
+    .list(id + "/");
+
+  const div = document.getElementById("p"+id);
+  if(!data || !div) return;
+
+  div.innerHTML = "";
+
+  data.forEach(f=>{
+    const url = supabaseClient.storage
+      .from("fotos")
+      .getPublicUrl(id + "/" + f.name)
+      .data.publicUrl;
+
+    div.innerHTML += `
+      <img src="${url}">
+      <button onclick="removerFoto('${id}','${f.name}')">🗑️ Remover</button>
+    `;
+  });
+}
+
+async function removerFoto(id,nome){
+  await supabaseClient.storage
+    .from("fotos")
+    .remove([`${id}/${nome}`]);
+  carregar();
+}
+
+/* ================= SALVAR ================= */
+form.onsubmit = async e => {
+  e.preventDefault();
+
+  const manutencao = {
+    local: local.value,
+    descricao: descricao.value,
+    data: dataManutencao.value,
+    responsavel: responsavel.value,
+    status: status.value
+  };
+
+  let res;
+
+  if(mid.value){
+    res = await supabaseClient
+      .from("manutencoes")
+      .update(manutencao)
+      .eq("id", mid.value)
+      .select()
+      .single();
+  }else{
+    res = await supabaseClient
+      .from("manutencoes")
+      .insert(manutencao)
+      .select()
+      .single();
+  }
+
+  if(res.error){
+    console.error(res.error);
+    alert(res.error.message);
+    return;
+  }
+
+  if(fotos.files.length){
+    for(const f of fotos.files){
+      const blob = await comprimirImagem(f);
+      const upload = await supabaseClient.storage
+        .from("fotos")
+        .upload(`${res.data.id}/${Date.now()}.jpg`, blob, { upsert:true });
+
+      if(upload.error){
+        console.error(upload.error);
+        alert(upload.error.message);
+      }
+    }
+  }
+
+  form.reset();
+  mid.value = "";
+  carregar();
+};
+
+/* ================= EDITAR ================= */
+async function editar(id){
+  const { data } = await supabaseClient
+    .from("manutencoes")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  mid.value = data.id;
+  local.value = data.local;
+  descricao.value = data.descricao;
+  dataManutencao.value = data.data;
+  responsavel.value = data.responsavel;
+  status.value = data.status;
+
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+carregar();
 </script>
 
 </body>
