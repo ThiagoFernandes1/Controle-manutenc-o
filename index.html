@@ -26,12 +26,12 @@ small{color:#666}
 <h1>🛠 Controle de Manutenção</h1>
 
 <form id="form">
-  <input type="hidden" id="id">
+  <input type="hidden" id="mid">
 
   <input id="local" placeholder="Local da manutenção" required>
   <textarea id="descricao" placeholder="Descrição" required></textarea>
 
-  <input type="date" id="data" required>
+  <input type="date" id="dataManutencao" required>
   <input id="responsavel" placeholder="Responsável" required>
 
   <select id="status">
@@ -48,42 +48,39 @@ small{color:#666}
 <div class="grid" id="lista"></div>
 
 <script>
-const supabaseUrl = "https://yydwtytjrjsbwycnfxlk.supabase.co";
-const supabaseKey = "sb_publishable_emSBOsbTZrSXtNxnBZihsw_du9yIkoX";
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+const supabase = supabaseJs.createClient(
+  "https://yydwtytjrjsbwycnfxlk.supabase.co",
+  "sb_publishable_emSBOsbTZrSXtNxnBZihsw_du9yIkoX"
+);
 
-/* ===== COMPRESSÃO DE IMAGEM ===== */
-async function comprimirImagem(file){
+/* ===== COMPRESSÃO ===== */
+function comprimirImagem(file){
   return new Promise(resolve=>{
     const img = new Image();
     img.src = URL.createObjectURL(file);
     img.onload = ()=>{
-      const canvas = document.createElement("canvas");
+      const c = document.createElement("canvas");
       const max = 900;
       let w = img.width, h = img.height;
 
       if(w > h && w > max){ h *= max / w; w = max; }
       else if(h > max){ w *= max / h; h = max; }
 
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
-      canvas.toBlob(b => resolve(b), "image/jpeg", 0.7);
-    }
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      c.toBlob(b => resolve(b), "image/jpeg", 0.7);
+    };
   });
 }
 
-/* ===== CARREGAR MANUTENÇÕES ===== */
+/* ===== LISTAR ===== */
 async function carregar(){
   const { data, error } = await supabase
     .from("manutencoes")
     .select("*")
-    .order("created_at",{ascending:false});
+    .order("created_at", { ascending:false });
 
-  if(error){
-    console.error(error);
-    return;
-  }
+  if(error){ console.error(error); return; }
 
   lista.innerHTML = "";
 
@@ -93,9 +90,7 @@ async function carregar(){
         <h3>${m.local}</h3>
         <small>${m.data} • ${m.responsavel} • <b>${m.status}</b></small>
         <p>${m.descricao}</p>
-
         <div class="photos" id="p${m.id}"></div>
-
         <button onclick="editar('${m.id}')">✏️ Editar</button>
       </div>
     `;
@@ -105,24 +100,18 @@ async function carregar(){
 
 /* ===== FOTOS ===== */
 async function carregarFotos(id){
-  const { data } = await supabase.storage
-    .from("fotos")
-    .list(id + "/");
-
+  const { data } = await supabase.storage.from("fotos").list(id + "/");
   const div = document.getElementById("p"+id);
   if(!data || !div) return;
 
   div.innerHTML = "";
-
   data.forEach(f=>{
-    const url = supabase.storage
-      .from("fotos")
-      .getPublicUrl(id + "/" + f.name)
-      .data.publicUrl;
+    const url = supabase.storage.from("fotos")
+      .getPublicUrl(`${id}/${f.name}`).data.publicUrl;
 
     div.innerHTML += `
       <img src="${url}">
-      <button onclick="removerFoto('${id}','${f.name}')">🗑️ Remover foto</button>
+      <button onclick="removerFoto('${id}','${f.name}')">🗑️ Remover</button>
     `;
   });
 }
@@ -132,65 +121,66 @@ async function removerFoto(id,nome){
   carregar();
 }
 
-/* ===== SALVAR ===== */
+/* ===== SALVAR / EDITAR ===== */
 form.onsubmit = async e => {
   e.preventDefault();
 
-  const manutencao = {
+  const dados = {
     local: local.value,
     descricao: descricao.value,
-    data: data.value,
+    data: dataManutencao.value,
     responsavel: responsavel.value,
     status: status.value
   };
 
-  let res;
+  let result;
 
-  if(id.value){
-        res = await supabase
-    .from("manutencoes")
-    .insert(manutencao)
-    .select("id")
-    .single();
+  if(mid.value){
+    result = await supabase
+      .from("manutencoes")
+      .update(dados)
+      .eq("id", mid.value)
+      .select()
+      .single();
   }else{
-        res = await supabase
-    .from("manutencoes")
-    .insert(manutencao)
-    .select("id")
-    .single();
+    result = await supabase
+      .from("manutencoes")
+      .insert(dados)
+      .select()
+      .single();
   }
 
-  if(res.error){
-    console.error(res.error);
+  if(result.error){
+    console.error(result.error);
+    alert("Erro ao salvar");
     return;
   }
 
   if(fotos.files.length){
     for(const f of fotos.files){
-      const blob = await comprimirImagem(f);
-      await supabase.storage
-        .from("fotos")
-        .upload(`${res.data.id}/${Date.now()}.jpg`, blob, { upsert:true });
+      const img = await comprimirImagem(f);
+      await supabase.storage.from("fotos")
+        .upload(`${result.data.id}/${Date.now()}.jpg`, img, { upsert:true });
     }
   }
 
   form.reset();
-  id.value = "";
+  mid.value = "";
   carregar();
 };
 
 /* ===== EDITAR ===== */
-async function editar(mid){
+async function editar(id){
   const { data } = await supabase
     .from("manutencoes")
     .select("*")
-    .eq("id", mid)
+    .eq("id", id)
     .single();
 
-  id.value = data.id;
+  mid.value = data.id;
   local.value = data.local;
   descricao.value = data.descricao;
-  data.value = data.data;
+  dataManutencao.value = data.data;
   responsavel.value = data.responsavel;
   status.value = data.status;
 
@@ -202,4 +192,3 @@ carregar();
 
 </body>
 </html>
-
