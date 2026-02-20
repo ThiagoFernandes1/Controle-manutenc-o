@@ -2,7 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Upload Manutenção</title>
+<title>Controle de Manutenção</title>
+
+<!-- Supabase CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 
@@ -17,9 +19,15 @@
 <button onclick="salvar()">Salvar</button>
 
 <script>
-const supabaseUrl = "https://yydwtytjrjsbwycnfxlk.supabase.co";
-const supabaseKey = "SUA_PUBLIC_ANON_KEY_AQUI"; // use a anon key
-const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+/* 🔑 CONFIG */
+const SUPABASE_URL = "https://yydwtytjrjsbwycnfxlk.supabase.co";
+const SUPABASE_KEY = "SUA_ANON_KEY_AQUI";
+
+/* ✅ CRIA CLIENTE UMA ÚNICA VEZ */
+const supabaseClient = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
 
 async function salvar() {
   const titulo = document.getElementById("titulo").value;
@@ -33,11 +41,11 @@ async function salvar() {
 
   const fileName = Date.now() + "_" + file.name;
 
-  // ⬆️ Upload da imagem
-  const { data: uploadData, error: uploadError } =
-    await supabase.storage
-      .from("manutencoes")
-      .upload(fileName, file);
+  /* ⬆️ Upload */
+  const { error: uploadError } = await supabaseClient
+    .storage
+    .from("manutencoes")
+    .upload(fileName, file);
 
   if (uploadError) {
     console.error(uploadError);
@@ -45,32 +53,27 @@ async function salvar() {
     return;
   }
 
-  // 🔗 URL pública da imagem
-  const { data: urlData } = supabase.storage
+  /* 🔗 URL pública */
+  const { data: urlData } = supabaseClient
+    .storage
     .from("manutencoes")
     .getPublicUrl(fileName);
 
-  const fotoUrl = urlData.publicUrl;
-
-  console.log("URL da foto:", fotoUrl);
-
-  // 🧠 Inserção no banco
-  const { data, error } = await supabase
+  /* 💾 Inserção no banco */
+  const { data, error } = await supabaseClient
     .from("manutencoes")
-    .insert([
-      {
-        titulo: titulo,
-        descricao: descricao,
-        foto_url: fotoUrl
-      }
-    ])
+    .insert([{
+      titulo,
+      descricao,
+      foto_url: urlData.publicUrl
+    }])
     .select();
 
   if (error) {
     console.error(error);
     alert("Erro ao salvar no banco");
   } else {
-    console.log("Salvo no banco:", data);
+    console.log("SALVO:", data);
     alert("Salvo com sucesso!");
   }
 }
