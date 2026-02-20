@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Controle de Manutenção</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body{font-family:Arial;background:#f4f6f8;margin:0;padding:20px}
+h1{text-align:center}
+form, .card{background:#fff;padding:15px;border-radius:8px;margin-bottom:20px;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+input,textarea,button{width:100%;padding:8px;margin-top:8px}
+button{background:#2563eb;color:#fff;border:0;border-radius:5px;cursor:pointer}
+button:hover{opacity:.9}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px}
+.photos img{width:100%;border-radius:5px;margin-top:5px}
+.photos button{background:#dc2626;margin-top:5px}
+small{color:#666}
+</style>
+</head>
+
+<body>
+
+<h1>🛠 Controle de Manutenção</h1>
+
+<form id="form">
+  <input type="hidden" id="id">
+  <input id="titulo" placeholder="Título da manutenção" required>
+  <textarea id="descricao" placeholder="Descrição" required></textarea>
+  <input type="date" id="data" required>
+  <input id="responsavel" placeholder="Responsável" required>
+  <input type="file" id="fotos" multiple accept="image/*">
+  <button>Salvar manutenção</button>
+</form>
+
+<div class="grid" id="lista"></div>
+
+<script>
+const supabaseUrl = "https://yydwtytjrjsbwycnfxlk.supabase.co";
+const supabaseKey = "sb_publishable_emSBOsbTZrSXtNxnBZihsw_du9yIkoX";
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+async function comprimirImagem(file){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = ()=>{
+      const canvas = document.createElement("canvas");
+      const max = 800;
+      let w = img.width, h = img.height;
+      if(w>h && w>max){h*=max/w;w=max}
+      else if(h>max){w*=max/h;h=max}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext("2d").drawImage(img,0,0,w,h);
+      canvas.toBlob(b=>resolve(b),"image/jpeg",0.7);
+    }
+  });
+}
+
+async function carregar(){
+  const {data}=await supabase.from("manutencoes").select("*").order("created_at",{ascending:false});
+  lista.innerHTML="";
+  data.forEach(m=>{
+    lista.innerHTML+=`
+      <div class="card">
+        <h3>${m.titulo}</h3>
+        <small>${m.data} • ${m.responsavel}</small>
+        <p>${m.descricao}</p>
+        <div class="photos" id="p${m.id}"></div>
+        <button onclick="editar(${m.id})">✏️ Editar</button>
+      </div>`;
+    carregarFotos(m.id);
+  });
+}
+
+async function carregarFotos(id){
+  const {data}=await supabase.storage.from("fotos").list(id+"/");
+  const div=document.getElementById("p"+id);
+  if(!data)return;
+  data.forEach(f=>{
+    const url=supabase.storage.from("fotos").getPublicUrl(id+"/"+f.name).data.publicUrl;
+    div.innerHTML+=`
+      <img src="${url}">
+      <button onclick="removerFoto('${id}','${f.name}')">🗑️ Remover foto</button>`;
+  });
+}
+
+async function removerFoto(id,nome){
+  await supabase.storage.from("fotos").remove([`${id}/${nome}`]);
+  carregar();
+}
+
+form.onsubmit=async e=>{
+  e.preventDefault();
+  const id=id.value;
+  const dados={
+    titulo:titulo.value,
+    descricao:descricao.value,
+    data:data.value,
+    responsavel:responsavel.value
+  };
+
+  let res;
+  if(id){
+    res=await supabase.from("manutencoes").update(dados).eq("id",id).select().single();
+  }else{
+    res=await supabase.from("manutencoes").insert(dados).select().single();
+  }
+
+  if(fotos.files.length){
+    for(const f of fotos.files){
+      const blob=await comprimirImagem(f);
+      await supabase.storage.from("fotos").upload(`${res.data.id}/${Date.now()}.jpg`,blob,{upsert:true});
+    }
+  }
+
+  form.reset();
+  id.value="";
+  carregar();
+};
+
+async function editar(id){
+  const {data}=await supabase.from("manutencoes").select("*").eq("id",id).single();
+  document.getElementById("id").value=data.id;
+  titulo.value=data.titulo;
+  descricao.value=data.descricao;
+  data.value=data.data;
+  responsavel.value=data.responsavel;
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+carregar();
+</script>
+
+</body>
+</html>
